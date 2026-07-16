@@ -111,6 +111,9 @@ pauses the agent to wait for my approval. Full design → `PROJECT_PLAN.md`.
 
 - [x] Plan written (`PROJECT_PLAN.md`)
 - [x] Working agreement written (this file)
-- [ ] **Next: Phase 0 — scaffold the monorepo + create the GitHub App**
+- [x] Phase 0 (code) — monorepo scaffold, deps installed, `.env.example`,
+      client↔server wiring proven (`/api/health` via Vite proxy)
+- [ ] Phase 0 (manual) — **create the GitHub App** + fill in `.env`
+- [ ] **Next: Phase 1 — webhook endpoint that logs "hello PR"**
 
 _(Keep this checklist updated as we go so we always know where we are.)_
