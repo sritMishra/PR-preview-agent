@@ -13,8 +13,18 @@ export const webhooks = new Webhooks({ secret: config.githubWebhookSecret });
 // Subscribing to action-specific event names IS our "which actions" filter —
 // GitHub fires pull_request for many actions (labeled, edited, assigned…) that
 // we simply never register for, so they never reach this handler.
+//
+// `ready_for_review` matters because a PR opened as a *draft* fires `opened`
+// while still a draft — which our draft guard below skips. The moment the
+// author clicks "Ready for review", GitHub fires `ready_for_review` (NOT a
+// second `opened`), and by then `pr.draft` is false, so it flows through.
 webhooks.on(
-  ['pull_request.opened', 'pull_request.reopened', 'pull_request.synchronize'],
+  [
+    'pull_request.opened',
+    'pull_request.reopened',
+    'pull_request.synchronize',
+    'pull_request.ready_for_review',
+  ],
   ({ name, payload }) => {
     const { action, number, pull_request: pr } = payload;
     const author = pr.user?.login ?? 'unknown';
