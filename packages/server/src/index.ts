@@ -1,12 +1,12 @@
-import 'dotenv/config';
-
 import { createNodeMiddleware } from '@octokit/webhooks';
 import express from 'express';
 
+// Import config FIRST — it loads .env and validates the environment before any
+// other module reads configuration.
+import { config } from './config.js';
 import { webhooks } from './webhook.js';
 
 const app = express();
-const PORT = Number(process.env.PORT ?? 3000);
 
 // IMPORTANT: mount the webhook middleware BEFORE express.json().
 // GitHub signs the RAW request body; this middleware reads those raw bytes,
@@ -22,6 +22,6 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true });
 });
 
-app.listen(PORT, () => {
-  console.log(`[server] listening on http://localhost:${PORT}`);
+app.listen(config.port, () => {
+  console.log(`[server] listening on http://localhost:${config.port}`);
 });
