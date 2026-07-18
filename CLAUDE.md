@@ -113,7 +113,10 @@ pauses the agent to wait for my approval. Full design → `PROJECT_PLAN.md`.
 - [x] Working agreement written (this file)
 - [x] Phase 0 (code) — monorepo scaffold, deps installed, `.env.example`,
       client↔server wiring proven (`/api/health` via Vite proxy)
-- [ ] Phase 0 (manual) — **create the GitHub App** + fill in `.env`
-- [ ] **Next: Phase 1 — webhook endpoint that logs "hello PR"**
+- [x] Phase 0 (manual) — GitHub App created & installed on `sritMishra/PR-preview-agent`;
+      `.env` filled (`GITHUB_APP_ID`, `GITHUB_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET`)
+- [x] Phase 1 — webhook endpoint verifies signatures, guards drafts/bots, and
+      logs reviewable PRs; proven end-to-end via smee (`smee.io/DIUiZX8oxOozDZS`)
+- [ ] **Next: Phase 2 — GitHub read/write plumbing (App auth → fetch diff → post a dummy review)**
 
 _(Keep this checklist updated as we go so we always know where we are.)_
