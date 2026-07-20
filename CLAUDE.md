@@ -117,6 +117,40 @@ pauses the agent to wait for my approval. Full design → `PROJECT_PLAN.md`.
       `.env` filled (`GITHUB_APP_ID`, `GITHUB_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET`)
 - [x] Phase 1 — webhook endpoint verifies signatures, guards drafts/bots, and
       logs reviewable PRs; proven end-to-end via smee (`smee.io/DIUiZX8oxOozDZS`)
-- [ ] **Next: Phase 2 — GitHub read/write plumbing (App auth → fetch diff → post a dummy review)**
+- [x] Phase 2 — GitHub read/write plumbing wired end-to-end: a real PR event
+      now auto-mints a token, reads the PR, and posts a (dummy) review under the
+      bot. Proven via smee + a live PR on `sritMishra/PR-preview-agent`.
+- [ ] **Next: Phase 3 — LangGraph skeleton (`ReviewState` + `ingest → aggregate →
+      post` with a Postgres checkpointer; stubbed findings, no LLM yet)**
+
+### Phase 2 — important notes & learnings
+
+- **Three auth identities** live in `github/app.ts`, all via `@octokit/auth-app`:
+  - `getAppOctokit()` — JWT-only ("ID badge"); App-level calls only (e.g. list
+    installations). Can't read repo contents.
+  - `getInstallationOctokit(id)` — the "room key"; scoped installation token
+    that reads diffs and posts reviews. Octokit mints + auto-refreshes it.
+  - The installation id is **not stored** — it arrives on every webhook at
+    `payload.installation.id`. (Our test install id: `147408011`.)
+- **GitHub media types:** `GET /pulls/{n}` returns JSON normally, but the raw
+  unified diff *text* when you send `Accept: application/vnd.github.diff`
+  (Octokit: `mediaType: { format: 'diff' }`). See `fetchPullRequestDiff`.
+- **Reviews are all-or-nothing:** a review bundles `body` + `event` + inline
+  `comments[]` in ONE call; if any inline comment anchors to a line not in the
+  diff, the whole call 422s. We always send `event: 'COMMENT'` (never auto
+  APPROVE/REQUEST_CHANGES — principle #1). Inline anchoring proper = Phase 4.
+- **The seam:** `review-pr.ts` (`reviewPullRequest`) holds the orchestration;
+  the webhook only routes + guards, then fires it. Phase 3 swaps this function
+  body for the LangGraph run — signature and call site stay identical.
+- **Fire-and-forget:** the webhook does NOT await the review, so GitHub gets its
+  200 inside the timeout; a `.catch` keeps a failed review from crashing the
+  process (fail-soft, principle #5).
+- **Identity decision (D2):** briefly explored posting as the user (a PAT, no
+  `[bot]` badge) but reverted — staying with the GitHub App bot identity for now.
+- **Dev tooling:** the tunnel CLI is the **`smee-client`** package, not `smee`
+  (`npx smee` errors with "could not determine executable to run"). Added as a
+  devDependency with an `npm run tunnel` script in `packages/server`.
+- **`verify-*.ts` scripts** (`verify-auth`, `verify-read`, `verify-post`) are
+  standalone dev tools run by hand with `npx tsx` — never imported by the server.
 
 _(Keep this checklist updated as we go so we always know where we are.)_
