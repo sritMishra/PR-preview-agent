@@ -6,7 +6,7 @@ This is where you learn **LangGraph** properly. A multi-step agent with **human-
 
 ## New skill
 
-Agentic workflows.
+Agentic workflows
 
 ## Why it matters
 
