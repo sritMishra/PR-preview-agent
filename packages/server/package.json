@@ -7,7 +7,8 @@
     "dev": "nodemon",
     "build": "tsc",
     "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "tunnel": "smee-client -u https://smee.io/DIUiZX8oxOozDZS -t http://localhost:3000/webhook"
   },
   "dependencies": {
     "@langchain/anthropic": "^1.5.1",
@@ -26,6 +27,7 @@
     "@types/node": "^22.10.2",
     "nodemon": "^3.1.9",
     "prisma": "^7.8.0",
+    "smee-client": "^5.0.0",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3"
   }

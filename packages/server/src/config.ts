@@ -21,9 +21,18 @@ const envSchema = z.object({
   // Server port. Env values are strings, so coerce to a number; default 3000.
   PORT: z.coerce.number().int().positive().default(3000),
 
+  // Phase 2 — needed now for GitHub App authentication.
+  GITHUB_APP_ID: z.string().min(1, 'required for GitHub App auth (Phase 2)'),
+  // Private keys are multi-line PEM. When stored on a single .env line they
+  // arrive with literal "\n" sequences; turn those back into real newlines so
+  // the crypto layer can parse the key. (Harmless if the key is already
+  // multi-line — there are simply no "\n" literals to replace.)
+  GITHUB_PRIVATE_KEY: z
+    .string()
+    .min(1, 'required for GitHub App auth (Phase 2)')
+    .transform((key) => key.replace(/\\n/g, '\n')),
+
   // Later phases — optional for now; we'll make each required in its phase.
-  GITHUB_APP_ID: z.string().optional(), // Phase 2 (GitHub App auth)
-  GITHUB_PRIVATE_KEY: z.string().optional(), // Phase 2
   ANTHROPIC_API_KEY: z.string().optional(), // Phase 4 (the review model)
   DATABASE_URL: z.string().optional(), // Phase 3 (checkpointer + Prisma)
 });

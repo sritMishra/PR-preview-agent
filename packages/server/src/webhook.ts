@@ -1,6 +1,7 @@
 import { Webhooks } from '@octokit/webhooks';
 
 import { config } from './config.js';
+import { reviewPullRequest } from './review-pr.js';
 
 // The Webhooks instance does two jobs:
 //   1. Verifies the X-Hub-Signature-256 HMAC on every delivery (using the secret).
@@ -26,7 +27,7 @@ webhooks.on(
     'pull_request.ready_for_review',
   ],
   ({ name, payload }) => {
-    const { action, number, pull_request: pr } = payload;
+    const { action, number, pull_request: pr, repository, installation } = payload;
     const author = pr.user?.login ?? 'unknown';
 
     // Guard 1: skip draft PRs — explicitly "not ready", reviewing is premature.
@@ -43,8 +44,28 @@ webhooks.on(
       return;
     }
 
+    // Guard 3: we need the installation id to mint a token. It's always present
+    // for App-delivered events, but the type marks it optional, so guard it.
+    if (!installation) {
+      console.warn(`[webhook] skip PR #${number}: no installation id on payload`);
+      return;
+    }
+
     console.log(
-      `[webhook] will review ${name}.${action} — PR #${number} "${pr.title}" by ${author}`,
+      `[webhook] reviewing ${name}.${action} — PR #${number} "${pr.title}" by ${author}`,
     );
+
+    // Fire-and-forget: kick off the review WITHOUT awaiting it, so this handler
+    // returns immediately and GitHub gets its 200 well inside the timeout. The
+    // .catch is essential — an unhandled rejection here would crash the process
+    // (fail-soft, PROJECT_PLAN §7 principle #5).
+    reviewPullRequest({
+      installationId: installation.id,
+      owner: repository.owner.login,
+      repo: repository.name,
+      prNumber: number,
+    }).catch((err) => {
+      console.error(`[webhook] review failed for PR #${number}:`, err);
+    });
   },
 );
