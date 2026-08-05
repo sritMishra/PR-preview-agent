@@ -32,6 +32,7 @@ export const ReviewState = Annotation.Root({
   prNumber: Annotation<number>,
 
   // ── Filled by `ingest`. Last-write-wins is correct: one node, one writer. ──
+  test:Annotation<number>,
   diff: Annotation<string>,
   files: Annotation<ChangedFile[]>,
 
