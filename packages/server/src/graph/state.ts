@@ -1,0 +1,64 @@
+import { Annotation } from '@langchain/langgraph';
+
+import type { ChangedFile } from '../github/pr.js';
+
+// One thing the reviewer wants to say about one line of code.
+// Phase 3 fabricates these by hand; Phase 4 has the LLM produce them under a
+// Zod schema (structured output), which is why the shape is already this
+// specific — it has to be postable as an inline comment without translation.
+export type Finding = {
+  path: string;
+  line: number;
+  severity: 'low' | 'medium' | 'high';
+  category: 'correctness' | 'security' | 'performance' | 'tests' | 'readability';
+  body: string;
+};
+
+/**
+ * The single object that flows through every node of the review graph.
+ *
+ * `Annotation.Root({...})` declares the state's fields ("channels"). Each field
+ * says how updates to it are merged:
+ *
+ *   Annotation<T>              → last write wins (no parens — this is TypeScript's
+ *                                "instantiation expression", not a function call)
+ *   Annotation<T>({reducer,…}) → custom merge behaviour
+ */
+export const ReviewState = Annotation.Root({
+  // ── Inputs: set once when the run starts, never changed by a node. ──
+  installationId: Annotation<number>,
+  owner: Annotation<string>,
+  repo: Annotation<string>,
+  prNumber: Annotation<number>,
+
+  // ── Filled by `ingest`. Last-write-wins is correct: one node, one writer. ──
+  diff: Annotation<string>,
+  files: Annotation<ChangedFile[]>,
+
+  // ── Findings ACCUMULATE. ──
+  // In Phase 4 several analyze branches run in parallel and each returns its own
+  // findings; with last-write-wins the slowest branch would erase the others.
+  // concat merges them instead. `default` supplies the [] that the first
+  // .concat needs — without it the first write would be `undefined.concat(...)`.
+  findings: Annotation<Finding[]>({
+    reducer: (existing, incoming) => existing.concat(incoming),
+    default: () => [],
+  }),
+
+  // ── Filled by `aggregate` / `post`. ──
+  summary: Annotation<string>,
+  postedReviewUrl: Annotation<string>,
+
+  // ── Errors accumulate too, for the same reason: a node that fails appends
+  // its complaint and the run continues with partial results, rather than
+  // throwing away everything the other nodes produced (plan §7, principle #5).
+  errors: Annotation<string[]>({
+    reducer: (existing, incoming) => existing.concat(incoming),
+    default: () => [],
+  }),
+});
+
+// The plain TypeScript type of the state object, derived from the annotation
+// above. Node functions will be typed with this, so a typo in a field name is a
+// compile error rather than a silent no-op at runtime.
+export type ReviewStateType = typeof ReviewState.State;
