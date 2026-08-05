@@ -28,7 +28,7 @@ export async function ingest(state: ReviewStateType): Promise<Partial<ReviewStat
     `[graph:ingest] PR #${state.prNumber} — ${files.length} file(s), ${diff.split('\n').length} diff lines`,
   );
 
-  return { files, diff };
+  return { files, test:123 , diff }
 }
 
 /**
