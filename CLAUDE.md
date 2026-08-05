@@ -49,6 +49,17 @@ So the rules for you (the assistant) are:
   over-explain general JS/TS, npm, git, or REST. **Do** explain LangGraph,
   LangChain, GitHub App auth, and webhook specifics.
 
+### I write the code. You tell me what to write. ← (from Phase 3 onward)
+- **Do not edit source files for me.** No `Edit`/`Write` on anything under
+  `packages/**` unless I explicitly ask ("you do this one").
+- Instead, per step: name the **target file path**, show the code in a fenced
+  block for me to type or copy, explain it, then give me the **exact command to
+  run** and **what I should see**.
+- Then **stop and wait** for me to report back before the next step. Typing it
+  myself is how I learn — that's the whole point.
+- Docs/plan files (`CLAUDE.md`, `PROJECT_PLAN.md`, `.env.example`) you *may*
+  edit directly. The rule is about source code.
+
 ---
 
 ## 1. What we're building (one paragraph)
@@ -81,8 +92,9 @@ pauses the agent to wait for my approval. Full design → `PROJECT_PLAN.md`.
 1. **Orient** — "We're at Phase X, step N. Goal of this step: …"
 2. **Teach** — explain the concept(s) and the plan in plain English.
 3. **Show shape** — types / signatures / graph diagram first.
-4. **Build** — write the small increment of code.
-5. **Walk through** — explain the code we just wrote, LangGraph bits especially.
+4. **Hand off** — give me the file path + the small increment of code to write.
+   *I* type it; you don't touch `packages/**` (see §0).
+5. **Walk through** — explain the code I just wrote, LangGraph bits especially.
 6. **Run it together** — tell me exactly what to run and what I should see.
 7. **Recap** — "✅ You now understand: …" and confirm before the next step.
 
@@ -147,9 +159,13 @@ pauses the agent to wait for my approval. Full design → `PROJECT_PLAN.md`.
   process (fail-soft, principle #5).
 - **Identity decision (D2):** briefly explored posting as the user (a PAT, no
   `[bot]` badge) but reverted — staying with the GitHub App bot identity for now.
-- **Dev tooling:** the tunnel CLI is the **`smee-client`** package, not `smee`
-  (`npx smee` errors with "could not determine executable to run"). Added as a
-  devDependency with an `npm run tunnel` script in `packages/server`.
+- **Dev tooling:** the package to install is **`smee-client`**, but the binary it
+  provides is **`smee`** (`"bin": { "smee": "bin/smee.js" }`) — dependency name
+  and command name differ. So `npm run tunnel` must invoke `smee`; invoking
+  `smee-client` fails with `127: command not found`. (The earlier "`npx smee`
+  could not determine executable to run" error was npx trying to *download* an
+  unrelated registry package, back before `smee-client` was a local
+  devDependency. Now that it is, `npx smee` resolves `node_modules/.bin/smee`.)
 - **`verify-*.ts` scripts** (`verify-auth`, `verify-read`, `verify-post`) are
   standalone dev tools run by hand with `npx tsx` — never imported by the server.
 

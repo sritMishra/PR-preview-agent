@@ -1,6 +1,4 @@
-import { getInstallationOctokit } from './github/app.js';
-import { fetchChangedFiles, fetchPullRequestDiff } from './github/pr.js';
-import { postReview } from './github/review.js';
+import { reviewGraph, threadIdFor } from './graph/graph.js';
 
 // Everything needed to review one PR. The webhook builds this from the event
 // payload and hands it over — the webhook never touches Octokit itself.
@@ -12,29 +10,33 @@ export type ReviewRequest = {
 };
 
 /**
- * THE SEAM. Today this does the Phase 2 dummy flow: authenticate → read the PR
- * → post a placeholder review. In Phase 3 the body becomes a LangGraph run
- * (ingest → analyze → interrupt for approval → post) — but the signature and
- * the webhook's call site stay exactly the same.
+ * THE SEAM, now closed.
+ *
+ * Phase 2 did auth → read → post inline in this function. Phase 3 moved all of
+ * it into the graph's nodes, so what's left here is an ADAPTER: it translates a
+ * webhook event into a graph run and decides the thread identity. Note the
+ * signature is unchanged — webhook.ts calls this exactly as it did before.
  */
 export async function reviewPullRequest(req: ReviewRequest): Promise<void> {
-  // Mint the room-key token for THIS installation (id came off the webhook).
-  const octokit = getInstallationOctokit(req.installationId);
-  const ctx = { owner: req.owner, repo: req.repo, prNumber: req.prNumber };
+  // One PR = one thread = one durable conversation with the checkpointer.
+  const threadId = threadIdFor(req);
 
-  // Read the PR — proving the wired-up read path works, not just the scripts.
-  const files = await fetchChangedFiles(octokit, ctx);
-  const diff = await fetchPullRequestDiff(octokit, ctx);
+  console.log(`[review] starting graph run on thread ${threadId}`);
 
-  // A summary-only review (no inline comments yet). Anchoring inline comments
-  // to real diff lines is Phase 4 work; here we just prove the round trip and
-  // echo back what we read, so we can see the read actually happened.
-  const summary =
-    `👋 Automated plumbing test (Phase 2).\n\n` +
-    `I read this PR: **${files.length} file(s) changed**, ` +
-    `**${diff.split('\n').length} diff lines**. No real review yet — ` +
-    `this confirms the webhook → auth → read → post pipeline is wired.`;
+  // invoke(input, config):
+  //   • `req` is the initial state — but as an UPDATE, not a whole state, so it
+  //     merges through the same reducers a node's return value would. That's why
+  //     ReviewRequest's four fields are exactly ReviewState's four input
+  //     channels: nothing needs translating.
+  //   • `thread_id` sits under `configurable` — LangChain's slot for runtime
+  //     values the runnable itself reads (vs. top-level opts like timeouts).
+  //   • the return value is the FINAL, fully-merged state after END.
+  const finalState = await reviewGraph.invoke(req, {
+    configurable: { thread_id: threadId },
+  });
 
-  const result = await postReview(octokit, ctx, { body: summary, event: 'COMMENT' });
-  console.log(`[review] posted dummy review on PR #${req.prNumber}: ${result.htmlUrl}`);
+  console.log(
+    `[review] thread ${threadId} done — ${finalState.findings.length} finding(s), ` +
+      `${finalState.errors.length} error(s), review: ${finalState.postedReviewUrl}`,
+  );
 }

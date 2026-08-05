@@ -8,7 +8,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "tunnel": "smee-client -u https://smee.io/DIUiZX8oxOozDZS -t http://localhost:3000/webhook"
+    "tunnel": "smee -u https://smee.io/DIUiZX8oxOozDZS -t http://localhost:3000/webhook"
   },
   "dependencies": {
     "@langchain/anthropic": "^1.5.1",
