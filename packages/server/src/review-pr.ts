@@ -35,8 +35,10 @@ export async function reviewPullRequest(req: ReviewRequest): Promise<void> {
     configurable: { thread_id: threadId },
   });
 
-  console.log(
-    `[review] thread ${threadId} done — ${finalState.findings.length} finding(s), ` +
-      `${finalState.errors.length} error(s), review: ${finalState.postedReviewUrl}`,
-  );
+  console.log("finalState==>",finalState)
+
+  // console.log(
+  //   `[review] thread ${threadId} done — ${finalState.findings.length} finding(s), ` +
+  //     `${finalState.errors.length} error(s), review: ${finalState.postedReviewUrl}`,
+  // );
 }
