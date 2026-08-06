@@ -167,11 +167,25 @@ pr-review-agent/
 11. `github/review.ts`: post a hardcoded summary review + one inline comment.
 12. ✅ **Milestone:** the bot leaves a real (dummy) comment on your test PR under its own name.
 
-### Phase 3 — LangGraph skeleton (Day 3–4)
-13. Define `ReviewState` + Zod finding schema in `graph/state.ts`.
-14. Wire a linear graph: `ingest → aggregate → post` (no LLM yet — stub findings).
-15. Add the **`PostgresSaver` checkpointer**; run with a `thread_id` = `${repo}#${prNumber}`.
+### Phase 3 — LangGraph skeleton (Day 3–4) — **DONE**
+13. ✅ Define `ReviewState` + the `Finding` type in `graph/state.ts`.
+    *(Findings are a plain TS type for now; the **Zod** schema arrives in Phase 4,
+    where it's needed to force the LLM's structured output.)*
+14. ✅ Wire a linear graph: `ingest → aggregate → post` (no LLM — stub findings).
+    Nodes in `graph/nodes.ts`, wiring in `graph/graph.ts`.
+15. ⚠️ **Deviation —** shipped the **`MemorySaver`** checkpointer, not
+    `PostgresSaver`, so this phase stayed about graph mechanics instead of DB
+    setup. Identical interface → one-line swap, scheduled just before Phase 5
+    (where surviving a restart is the whole point). `thread_id` =
+    `${owner}/${repo}#${prNumber}` via `threadIdFor()`.
 16. ✅ **Milestone:** webhook triggers the graph, which posts the stubbed review.
+    *(`typecheck` + `graph/verify-graph.ts` confirm the topology; the live
+    webhook → graph → real PR round trip is pending final confirmation.)*
+
+**Carried into later phases:**
+- Swap `MemorySaver` → `PostgresSaver` (needs `DATABASE_URL`) — before step 22.
+- Reusing one `thread_id` per PR means a `synchronize` re-run **appends** to the
+  previous run's `findings` (concat reducer). Fix in step 28.
 
 ### Phase 4 — Real review intelligence (Day 4–6)
 17. Implement `filterAndChunk` (diff parsing, line mapping, noise filters).
@@ -214,8 +228,8 @@ pr-review-agent/
 
 ## 8. Open questions to confirm
 
-- **Q1 — Language:** LangGraph.js (TS, matches your stack) or Python (more common in EU postings)? Plan assumes TS.
-- **Q2 — Approval surface:** Web UI (assumed) vs approving directly inside GitHub (e.g. the agent posts *pending* comments and you convert them) vs Slack buttons?
-- **Q3 — Scope of review:** whole-PR context vs diff-only? (Diff-only is cheaper and the sane v1; whole-repo RAG is a stretch goal.)
-- **Q4 — One repo or many?** GitHub App can serve many installs; v1 targets one test repo.
+- **Q1 — Language:** ✅ **Settled: LangGraph.js (TypeScript).** Built through Phase 3 on `@langchain/langgraph` v1.
+- **Q2 — Approval surface:** ⏳ **Still open**, and due in Phase 5. Web UI (assumed) vs approving directly inside GitHub (e.g. the agent posts *pending* comments and you convert them) vs Slack buttons?
+- **Q3 — Scope of review:** ✅ **Settled for v1: diff-only.** `ingest` fetches the unified diff + changed-file list; no whole-repo context. Whole-repo RAG stays a stretch goal.
+- **Q4 — One repo or many?** ✅ **Settled for v1: one test repo** (`sritMishra/PR-preview-agent`). Nothing in the code hardcodes it, though — the installation id arrives per webhook and `thread_id` is namespaced by `owner/repo`, so multi-install works without changes if we want it.
 ```

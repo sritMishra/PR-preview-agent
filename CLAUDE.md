@@ -132,8 +132,66 @@ pauses the agent to wait for my approval. Full design → `PROJECT_PLAN.md`.
 - [x] Phase 2 — GitHub read/write plumbing wired end-to-end: a real PR event
       now auto-mints a token, reads the PR, and posts a (dummy) review under the
       bot. Proven via smee + a live PR on `sritMishra/PR-preview-agent`.
-- [ ] **Next: Phase 3 — LangGraph skeleton (`ReviewState` + `ingest → aggregate →
-      post` with a Postgres checkpointer; stubbed findings, no LLM yet)**
+- [x] Phase 3 — LangGraph skeleton: `ReviewState` (channels + reducers), three
+      nodes, and a compiled `StateGraph` (`ingest → aggregate → post`) that the
+      webhook now drives. Findings are stubbed; no LLM.
+      **Deviation from the plan:** step 15 said `PostgresSaver`; we shipped
+      `MemorySaver` instead (same interface, one-line swap) so this phase stayed
+      about graph mechanics rather than DB setup. Postgres comes just before
+      Phase 5, where surviving a restart starts to matter.
+      *Verified:* `typecheck` clean + `verify-graph.ts` prints the intended
+      topology. *Live webhook → graph → real PR round trip: to confirm.*
+- [ ] **Next: Phase 4 — real review intelligence (`filterAndChunk` diff parsing +
+      line mapping, then `analyze` with category prompts, structured output, and
+      parallel fan-out per file; `aggregate` gains dedupe/cap/ranking)**
+
+### Phase 3 — important notes & learnings
+
+- **Why a graph at all (the one-line version):** you can't pause a function —
+  its work-in-progress lives on the call stack, which isn't serializable. So
+  LangGraph moves the locals into an explicit **state object** and the control
+  flow into an explicit **graph**, making both plain data that can be saved and
+  reloaded by a different process. Nodes are the *price of pausability*, not an
+  organisational preference — and node boundaries are the only places a run can
+  checkpoint, pause, resume, retry, or fan out.
+- **State = channels + reducers** (`graph/state.ts`). A node returns a *partial*
+  state; the reducer decides how that patch merges. `Annotation<T>` (no parens —
+  a TS instantiation expression) = last-write-wins; `Annotation<T>({reducer,
+  default})` = custom. `findings`/`errors` use `concat` **because Phase 4's
+  `analyze` fans out in parallel** — with last-write-wins the slowest branch
+  would silently erase every other branch's findings.
+- **State must be JSON-serializable** — the checkpointer persists it after every
+  node. That's why `installationId: number` is a channel and each node
+  re-derives its Octokit from it, instead of carrying the live client. Costs one
+  extra token mint per run; that's the honest price of durability.
+- **Nodes are plain TypeScript** (`graph/nodes.ts` imports zero LangGraph). They
+  re-implement nothing — they call the Phase 2 `github/*.ts` functions. So they
+  can be unit-tested by passing a plain object.
+- **`aggregate` is a pure transform**, deliberately. Phase 4 replaces that one
+  body with the LLM fan-out and `post` doesn't change, because both sides talk
+  only through `findings`/`summary` in state.
+- **Node names are schema, not labels:** checkpoints record progress *by node
+  name*, so renaming one invalidates existing checkpoints. TypeScript
+  accumulates the names as you `addNode`, so a typo'd `addEdge` target is a
+  compile error.
+- **`invoke(input, config)` — two different worlds.** `input` (our `ReviewRequest`)
+  IS the initial state, merged through the same reducers a node's return value
+  would be; that's why `ReviewRequest`'s four fields are exactly `ReviewState`'s
+  four input channels. `configurable.thread_id` is **not** state — it's metadata
+  selecting which saved history the run belongs to. Nodes never see it.
+- **`thread_id = ${owner}/${repo}#${prNumber}`** (`threadIdFor`). One PR = one
+  durable conversation. **Known consequence:** a `synchronize` event reuses the
+  thread, so run #2 loads run #1's state and `concat`s onto it — findings
+  over-report. Left in on purpose; the fix (head-SHA-scoped thread, or resetting
+  `findings` in `ingest`) is `PROJECT_PLAN.md` step 28.
+- **`verify-graph.ts`** prints the compiled graph as Mermaid via
+  `getGraphAsync({}).drawMermaid()` — no network, nothing posted, safe to re-run
+  (unlike `verify-post.ts`). Worth keeping as Phase 4/5 make the topology
+  non-obvious. Run it **from `packages/server/`**: `config.ts` loads `.env` from
+  the cwd, so running from the repo root fails env validation.
+- **`review-pr.ts` is now an adapter,** not orchestration: event → graph run, and
+  it owns thread identity. Phase 5's HITL API needs a *second* entry point into
+  the same graph (`Command(resume=…)` on an existing thread) — it belongs here.
 
 ### Phase 2 — important notes & learnings
 
