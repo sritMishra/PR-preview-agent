@@ -2,6 +2,7 @@ import { Annotation } from '@langchain/langgraph';
 
 import type { ChangedFile } from '../github/pr.js';
 
+import type { FileChunk } from './chunks.js';
 import type { SkippedFile } from './filters.js';
 
 // One thing the reviewer wants to say about one line of code.
@@ -47,6 +48,12 @@ export const ReviewState = Annotation.Root({
   // honestly say "I looked at 4 of 9 files" — and `skippedFiles` says why.
   reviewableFiles: Annotation<ChangedFile[]>,
   skippedFiles: Annotation<SkippedFile[]>,
+
+  // The parsed diff: per file, its hunks and the right-side line numbers an
+  // inline comment may anchor to. Step 18's fan-out sends ONE of these per
+  // branch, which is why it has to be plain JSON — see FileChunk's note on why
+  // `commentableLines` is an array rather than a Set.
+  chunks: Annotation<FileChunk[]>,
 
   // ── Findings ACCUMULATE. ──
   // In Phase 4 several analyze branches run in parallel and each returns its own
