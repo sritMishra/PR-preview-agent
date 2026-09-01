@@ -1,6 +1,6 @@
 import { END, MemorySaver, START, StateGraph } from '@langchain/langgraph';
 
-import { aggregate, ingest, post } from './nodes.js';
+import { aggregate, filterAndChunk, ingest, post } from './nodes.js';
 import { ReviewState } from './state.js';
 
 // The checkpointer IS the store, so it's created ONCE at module scope. A fresh
@@ -13,7 +13,7 @@ import { ReviewState } from './state.js';
 const checkpointer = new MemorySaver();
 
 /**
- * The review graph:  START → ingest → aggregate → post → END
+ * The review graph:  START → ingest → filterAndChunk → aggregate → post → END
  *
  * `new StateGraph(ReviewState)` starts an empty graph DESCRIPTION — it can't run
  * anything yet. Passing the annotation from state.ts is how it learns the
@@ -31,18 +31,24 @@ export const reviewGraph = new StateGraph(ReviewState)
   // These strings are schema, not labels: checkpoints record progress BY node
   // name, so renaming one invalidates existing checkpoints.
   .addNode('ingest', ingest)
+  .addNode('filterAndChunk', filterAndChunk)
   .addNode('aggregate', aggregate)
   .addNode('post', post)
 
   // ── The wiring. ──
-  // These four edges are the control flow that used to be nothing more than the
+  // These edges are the control flow that used to be nothing more than the
   // ORDER OF THE AWAITS inside reviewPullRequest. Making it data is what lets
   // LangGraph stop between steps and pick up again later.
   //
   // START and END are sentinel constants, not nodes you write. The START edge
   // declares the entry point; without one, compile() fails.
+  //
+  // Inserting a step = REPLACING one edge with two. `ingest → aggregate` became
+  // `ingest → filterAndChunk → aggregate`. Note `post` needed no change: nodes
+  // talk only through state, so upstream topology is none of its business.
   .addEdge(START, 'ingest')
-  .addEdge('ingest', 'aggregate')
+  .addEdge('ingest', 'filterAndChunk')
+  .addEdge('filterAndChunk', 'aggregate')
   .addEdge('aggregate', 'post') // ← Phase 5 splices `humanReview` into THIS edge
   .addEdge('post', END)
 

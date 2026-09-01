@@ -188,8 +188,32 @@ pr-review-agent/
   previous run's `findings` (concat reducer). Fix in step 28.
 
 ### Phase 4 — Real review intelligence (Day 4–6)
-17. Implement `filterAndChunk` (diff parsing, line mapping, noise filters).
-18. Implement `analyze` with the category prompts + **structured output** (parallel fan-out per file).
+
+17. ✅ **`filterAndChunk`** — shipped in two commits.
+    - **17a** (`8e59518`) — noise filters + whole-PR budgets (`graph/filters.ts`),
+      the `filterAndChunk` node, and `reviewableFiles` / `skippedFiles` channels.
+      One edge became two: `ingest → filterAndChunk → aggregate`.
+    - **17b** (`a4d76e5`) — diff parsing and line mapping (`graph/chunks.ts`):
+      hunk headers → true new-file line numbers → a per-file **commentable-line
+      allow-list**, plus `anchorAll` (snap near-misses, demote the unanchorable)
+      and a line-numbered rendering for the step-18 prompt. `post` now sends real
+      `comments[]`. **Graph topology unchanged** — nodes talk only through state.
+    - Pulled forward from step 29: `post` retries summary-only if GitHub rejects
+      the batch, so one bad anchor can't cost the whole review.
+
+18. **`analyze`** — the LLM. Split into three, no tokens spent until 18b:
+    - **18a — the prompt, as a pure function.** Build the model's view from a
+      `FileChunk` + PR metadata: the numbered rendering, the `+`/`-` markers, the
+      explicit commentable-line allow-list. `verify-prompt.ts` prints exactly what
+      the model would see. No API key, no LLM. *(Diff-only for the MVP — widening
+      this view is **V2-1**, see Phase 7.)*
+    - **18b — one call, one file.** `@langchain/anthropic` + a Zod schema forcing
+      structured output (`{line, severity, category, body, confidence}`). The model
+      never returns `path` — the branch already knows which file it holds.
+      Findings pass through `anchorAll` exactly as the stubs do today.
+    - **18c — the fan-out.** `Send` dispatches one branch per file. First topology
+      change since 17a, and the first time `findings`' `concat` reducer earns its
+      existence. Cap concurrency for rate limits.
 19. Implement `aggregate` (dedupe, cap, severity ranking, summary generation).
 20. Tune prompts on 3–5 real PRs; add a golden-set to eyeball quality.
 21. ✅ **Milestone:** genuinely useful, correctly-anchored inline comments appear.
@@ -212,6 +236,67 @@ pr-review-agent/
 
 ---
 
+### Phase 7 — V2: reviewer context (post-MVP)
+
+> Everything above ships first. **The MVP is allowed to be less smart.** This
+> phase begins the moment the MVP is working end to end, and V2-1 is the single
+> highest-priority item in the project after it.
+
+#### 🔴 V2-1 — Give the reviewer real context. **HIGH PRIORITY — start here.**
+
+**The problem.** v1 shows the LLM only the changed hunks. Even a reviewer seeing
+a codebase for the very first time scrolls up, reads the imports, and looks at
+the rest of the function before commenting. Ours cannot — it reads through a
+keyhole. That caps it at "problems visible inside the diff" and is the single
+biggest limit on review quality. It is a v1 *compromise for speed*, not a
+considered scope decision.
+
+**The principle: read wide, comment narrow.** What the model may READ and what it
+may COMMENT ON are two different things — they are only accidentally identical
+today. Widen the rendered view; leave the commentable-line allow-list from 17b
+exactly as it is. Every piece of anchoring and validation machinery survives
+untouched, because a human reviewer works the same way: read the file, comment on
+the diff.
+
+**Work items, in order:**
+
+1. `github/pr.ts` — `fetchFileAtRef(octokit, ctx, path, sha)`: file contents at
+   the PR head. Needs a new `headSha` state channel (`ingest` currently discards
+   it).
+2. Feed the file into the 18a prompt builder **alongside** the diff, not instead
+   of it. The file shows the current state; only the diff shows what was
+   **removed**, and deleted code is often where the author's intent lives.
+3. **Context-window optimisation — this is the real design work. Do not just
+   "send the whole file".**
+   - Start with a **window** around each hunk (±N lines) plus the file's import
+     block. Usually as good as the whole file, at a fraction of the tokens.
+   - **Measure before widening:** tokens/PR, cost/PR, and whether the findings
+     actually change. A bigger window that produces identical findings is pure
+     cost.
+   - Escalate to whole-file only under a size threshold.
+   - Consider a cheap **context-summariser pass** — a smaller, faster model that
+     condenses a large file down to the parts relevant to this diff — before
+     paying for a large window on the expensive model. It must beat "just send a
+     bigger window" on quality-per-token, or it's an extra hop for nothing.
+4. Re-tune prompts once the view widens. The 18a prompt says *"you are seeing
+   only the changed portion of one file"* — that sentence becomes a lie and will
+   actively suppress findings if left in.
+
+#### V2-2 — Cross-file impact: *"will this break anything else?"*
+
+The question neither a diff nor a single file can answer. Give `analyze` tools
+(`read_file`, `grep_repo`) so it can go find the callers of a renamed symbol.
+Turns the node into a small agent loop — retry semantics, token budget, a stop
+condition — and introduces **tool/model binding**, a `CLAUDE.md` learning goal
+not yet met.
+
+#### V2-3 — Whole-repo retrieval (RAG)
+
+Index the repository for semantic retrieval. Heaviest option: indexing pipeline,
+storage, staleness. Only worth it if V2-1 and V2-2 leave a real gap.
+
+---
+
 ## 7. Guiding principles
 
 1. **Human-approved by default.** No comment reaches a developer without your OK
@@ -230,6 +315,6 @@ pr-review-agent/
 
 - **Q1 — Language:** ✅ **Settled: LangGraph.js (TypeScript).** Built through Phase 3 on `@langchain/langgraph` v1.
 - **Q2 — Approval surface:** ⏳ **Still open**, and due in Phase 5. Web UI (assumed) vs approving directly inside GitHub (e.g. the agent posts *pending* comments and you convert them) vs Slack buttons?
-- **Q3 — Scope of review:** ✅ **Settled for v1: diff-only.** `ingest` fetches the unified diff + changed-file list; no whole-repo context. Whole-repo RAG stays a stretch goal.
+- **Q3 — Scope of review:** ✅ **Settled for the MVP: diff-only.** `ingest` fetches the unified diff + changed-file list; the LLM sees only the changed hunks. ⚠️ **This is a speed compromise, not a considered scope decision** — it is deliberately revisited as **V2-1 (Phase 7), the top post-MVP priority**, which widens the model's view to the changed files themselves under a "read wide, comment narrow" rule. Whole-repo RAG stays a stretch goal (V2-3).
 - **Q4 — One repo or many?** ✅ **Settled for v1: one test repo** (`sritMishra/PR-preview-agent`). Nothing in the code hardcodes it, though — the installation id arrives per webhook and `thread_id` is namespaced by `owner/repo`, so multi-install works without changes if we want it.
 ```

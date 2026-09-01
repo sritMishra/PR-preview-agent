@@ -34,6 +34,19 @@ const envSchema = z.object({
 
   // Later phases — optional for now; we'll make each required in its phase.
   ANTHROPIC_API_KEY: z.string().optional(), // Phase 4 (the review model)
+  // Which Claude model reviews the code. Opus 5 is the default — the most
+  // capable option, and quality is the whole point of this node. Override to
+  // `claude-sonnet-5` or `claude-haiku-4-5` if you'd rather trade some review
+  // quality for cost: this runs once per changed file, so it multiplies.
+  //
+  // `.preprocess` matters here: dotenv turns a bare `ANTHROPIC_MODEL=` line into
+  // the EMPTY STRING, and a Zod `.default()` only fires for `undefined`. Without
+  // this, an empty line in .env would silently set the model name to '' and the
+  // API call would fail with something unhelpful. Treat empty as "not set".
+  ANTHROPIC_MODEL: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.string().default('claude-opus-5'),
+  ),
   DATABASE_URL: z.string().optional(), // Phase 3 (checkpointer + Prisma)
 });
 
@@ -57,5 +70,6 @@ export const config = {
   githubAppId: parsed.data.GITHUB_APP_ID,
   githubPrivateKey: parsed.data.GITHUB_PRIVATE_KEY,
   anthropicApiKey: parsed.data.ANTHROPIC_API_KEY,
+  anthropicModel: parsed.data.ANTHROPIC_MODEL,
   databaseUrl: parsed.data.DATABASE_URL,
 } as const;

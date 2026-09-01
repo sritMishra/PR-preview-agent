@@ -2,6 +2,9 @@ import { Annotation } from '@langchain/langgraph';
 
 import type { ChangedFile } from '../github/pr.js';
 
+import type { FileChunk } from './chunks.js';
+import type { SkippedFile } from './filters.js';
+
 // One thing the reviewer wants to say about one line of code.
 // Phase 3 fabricates these by hand; Phase 4 has the LLM produce them under a
 // Zod schema (structured output), which is why the shape is already this
@@ -12,6 +15,11 @@ export type Finding = {
   severity: 'low' | 'medium' | 'high';
   category: 'correctness' | 'security' | 'performance' | 'tests' | 'readability';
   body: string;
+  // How sure the model was (0-1). Optional because the Phase 3 stub doesn't set
+  // it. Carried rather than acted on here: `aggregate` decides the threshold
+  // (PROJECT_PLAN step 19), so dropping it at the source would take the choice
+  // away from the node that owns ranking.
+  confidence?: number;
 };
 
 /**
@@ -34,6 +42,23 @@ export const ReviewState = Annotation.Root({
   // ── Filled by `ingest`. Last-write-wins is correct: one node, one writer. ──
   diff: Annotation<string>,
   files: Annotation<ChangedFile[]>,
+
+  // ── Filled by `filterAndChunk`. ──
+  // Single writer, written once per run → last-write-wins is correct. (Contrast
+  // with `findings` below, which needs `concat` precisely because Phase 4's
+  // `analyze` step will have many parallel writers.)
+  //
+  // `files` is everything GitHub told us changed; `reviewableFiles` is the
+  // subset we'll actually spend tokens on. Keeping BOTH is what lets the summary
+  // honestly say "I looked at 4 of 9 files" — and `skippedFiles` says why.
+  reviewableFiles: Annotation<ChangedFile[]>,
+  skippedFiles: Annotation<SkippedFile[]>,
+
+  // The parsed diff: per file, its hunks and the right-side line numbers an
+  // inline comment may anchor to. Step 18's fan-out sends ONE of these per
+  // branch, which is why it has to be plain JSON — see FileChunk's note on why
+  // `commentableLines` is an array rather than a Set.
+  chunks: Annotation<FileChunk[]>,
 
   // ── Findings ACCUMULATE. ──
   // In Phase 4 several analyze branches run in parallel and each returns its own
