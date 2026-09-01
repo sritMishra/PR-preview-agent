@@ -15,6 +15,11 @@ export type Finding = {
   severity: 'low' | 'medium' | 'high';
   category: 'correctness' | 'security' | 'performance' | 'tests' | 'readability';
   body: string;
+  // How sure the model was (0-1). Optional because the Phase 3 stub doesn't set
+  // it. Carried rather than acted on here: `aggregate` decides the threshold
+  // (PROJECT_PLAN step 19), so dropping it at the source would take the choice
+  // away from the node that owns ranking.
+  confidence?: number;
 };
 
 /**
