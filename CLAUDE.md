@@ -141,9 +141,67 @@ pauses the agent to wait for my approval. Full design → `PROJECT_PLAN.md`.
       Phase 5, where surviving a restart starts to matter.
       *Verified:* `typecheck` clean + `verify-graph.ts` prints the intended
       topology. *Live webhook → graph → real PR round trip: to confirm.*
-- [ ] **Next: Phase 4 — real review intelligence (`filterAndChunk` diff parsing +
-      line mapping, then `analyze` with category prompts, structured output, and
-      parallel fan-out per file; `aggregate` gains dedupe/cap/ranking)**
+- [~] Phase 4 — real review intelligence. **Step 17 done** in two commits:
+      **17a** (`8e59518`) noise filters + budgets + the `filterAndChunk` node;
+      **17b** (`a4d76e5`) diff parsing, line mapping, the commentable-line
+      allow-list, `anchorAll` validation, and real inline `comments[]` on the PR.
+      No LLM yet — bodies are stubs, anchors are real.
+- [ ] **Next: step 18 — `analyze` (the LLM).** Split three ways so no tokens are
+      spent until 18b: **18a** the prompt as a pure function + `verify-prompt.ts`
+      (see exactly what the model would see, for free); **18b** one call, one
+      file, Zod structured output; **18c** the `Send` fan-out.
+- [ ] 🔴 **Post-MVP priority #1 (V2-1, `PROJECT_PLAN.md` Phase 7):** widen the
+      model's view beyond the diff. Deliberately deferred to ship the MVP —
+      **not** a settled scope decision. See the V2-1 entry before starting it.
+
+### Phase 4 — important notes & learnings
+
+- **The problem step 17 solves, in one line:** a diff speaks in *relative* terms
+  ("in the region near line 197, this changed"); GitHub's comment API speaks in
+  *absolute* terms ("file X, line 203"). Nobody gives you both. `chunks.ts` is
+  the translator: walk from the `@@` header keeping two counters (context
+  advances both sides, `+` only the new, `-` only the old) and every line's true
+  number falls out.
+- **The all-or-nothing rule drives the whole design.** GitHub rejects the ENTIRE
+  review — summary included — if one inline comment names a line it can't find.
+  So we never guess an address: `filterAndChunk` precomputes a per-file
+  allow-list, `aggregate` validates every finding against it, and `post` still
+  keeps a summary-only retry because GitHub is the final authority on its own
+  diff. Our validation is a prediction; GitHub is the truth.
+- **Both commits have the same four-layer shape** — worth reusing for step 18:
+  *rules* (a pure module), *proof* (a `verify-*.ts` on fixtures), *home* (new
+  channels in `state.ts`), *adapter* (a node in `nodes.ts`), and only sometimes
+  *topology* (`graph.ts`). 17b changed no topology at all: a whole new capability
+  landed because nodes talk only through state.
+- **Two diff-parser traps, both now covered by fixtures:** `@@ -1 +1 @@` — the
+  count is OMITTED when it's 1 — and `\ No newline at end of file`, which is an
+  annotation about the previous line, not a line. Both put comments on the WRONG
+  line rather than crashing, which is the worst failure mode available.
+- **`map` → `flatMap` in `aggregate` is load-bearing.** A file whose changes were
+  all deletions has no commentable line; the honest answer is zero findings, not
+  a fabricated `line: 1`.
+- **Serializable state, again:** `commentableLines` is a `number[]` and not a
+  `Set`, even though membership testing is all we do with it — a `Set`
+  round-trips through JSON as `{}`. Same rule that keeps Octokit out of state.
+- **Validation runs in `aggregate`, not `post`, because of Phase 5.** The draft a
+  human approves must already be postable; validating downstream of the human
+  would mean approving comments that silently evaporate. Node placement encodes a
+  product decision here, not just code organisation.
+- **The model will never return `path`.** Each fan-out branch already holds
+  exactly one file, so the branch stamps the filename on. Every field you ask a
+  model for is another field it can get wrong — and this is *why* parallelism is
+  safe, not a reason to serialise.
+- **`numbered` (the line-numbered gutter) is built and currently unused.** It's
+  step 18's prompt: printing the real line number beside the code turns
+  anchoring from a *counting* problem (models are bad) into a *copying* problem
+  (models are good). Deleted lines get no number, so they can't be cited by
+  accident rather than merely being forbidden.
+- **Known dead weight:** `chunks` carries full `hunks` (every diff line's text)
+  in state, read by nothing today, and the checkpointer serialises state after
+  every node. Fine under `MemorySaver`; revisit before the `PostgresSaver` swap.
+- **Pulled forward from step 29:** `post` retries summary-only on a 422 and
+  appends to `errors` — the first thing in the project ever to write that
+  channel.
 
 ### Phase 3 — important notes & learnings
 
